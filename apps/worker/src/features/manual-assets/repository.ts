@@ -3,6 +3,7 @@ export type ManualAssetRow = {
   name: string;
   category: string;
   note: string | null;
+  currency: string;
   createdAt: string;
 };
 
@@ -15,7 +16,7 @@ export type ManualAssetHistoryRow = {
 export async function listManualAssets(db: D1Database) {
   const assets = await db
     .prepare(
-      `SELECT id, name, category, note, created_at AS createdAt
+      `SELECT id, name, category, note, currency, created_at AS createdAt
      FROM manual_assets
      ORDER BY created_at ASC`,
     )
@@ -43,6 +44,7 @@ export async function createManualAsset(
     name: string;
     category: string;
     note: string | null;
+    currency: string;
     value: number;
     date: string;
     now: string;
@@ -51,9 +53,16 @@ export async function createManualAsset(
   await db.batch([
     db
       .prepare(
-        `INSERT INTO manual_assets (id, name, category, note, created_at) VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO manual_assets (id, name, category, note, currency, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .bind(input.id, input.name, input.category, input.note, input.now),
+      .bind(
+        input.id,
+        input.name,
+        input.category,
+        input.note,
+        input.currency,
+        input.now,
+      ),
     manualAssetHistoryUpsertStatement(
       db,
       input.id,
@@ -67,7 +76,15 @@ export async function createManualAsset(
 export async function updateManualAsset(
   db: D1Database,
   id: string,
-  input: { name?: string; category?: string; note?: string | null },
+  input: {
+    name?: string;
+    category?: string;
+    note?: string | null;
+    currency?: string;
+    value?: number;
+    date?: string;
+  },
+  now: string,
 ) {
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -83,10 +100,24 @@ export async function updateManualAsset(
     sets.push("note = ?");
     values.push(input.note ?? null);
   }
-  await db
-    .prepare(`UPDATE manual_assets SET ${sets.join(", ")} WHERE id = ?`)
-    .bind(...values, id)
-    .run();
+  if (input.currency) {
+    sets.push("currency = ?");
+    values.push(input.currency);
+  }
+  const statements: D1PreparedStatement[] = [];
+  if (sets.length > 0) {
+    statements.push(
+      db
+        .prepare(`UPDATE manual_assets SET ${sets.join(", ")} WHERE id = ?`)
+        .bind(...values, id),
+    );
+  }
+  if (input.value !== undefined && input.date !== undefined) {
+    statements.push(
+      manualAssetHistoryUpsertStatement(db, id, input.date, input.value, now),
+    );
+  }
+  if (statements.length > 0) await db.batch(statements);
 }
 
 export async function deleteManualAsset(db: D1Database, id: string) {
