@@ -217,6 +217,8 @@ Cloudflare Worker 與 HTTP 平台層，目前包含：
 - Cloudflare Access JWT 驗證。
 - 設定與加密工具。
 
+連接器設定、推播訂閱與集保同步狀態的加密金鑰統一由 `platform/config.ts` 的 `configEncryptionKey` 取得。`CONFIG_ENCRYPTION_KEY=auto` 使用部署 script 保存的 `GENERATED_CONFIG_ENCRYPTION_KEY`，其餘值沿用自訂金鑰；缺少必要的金鑰時直接失敗，詳細初始化與復原限制見[部署文件](005-deployment.md#1-選擇加密金鑰)。
+
 `platform` 不得依賴任何具體 feature。
 
 ### `apps/worker/src/middleware/`
@@ -619,6 +621,14 @@ sequenceDiagram
 ```
 
 ## 同步鎖與排程
+
+每週排程可選擇一至七個星期，所有執行日共用同一個台北開始時間。
+`sync_jobs` 與 `sync_schedule_settings` 的 `preferred_weekdays` 保存星期 JSON 陣列；
+NULL 時在 repository selection 沿用 `[preferred_weekday]`，舊單日設定不需重新儲存。
+API 驗證星期不可重複、至少一天，並按 0 至 6 排序；舊版單日輸入仍可使用。
+`nextSyncRunAt` 從勾選星期找出嚴格晚於目前時間的最近執行時間，
+一般同步及電子發票／集保結案皆使用相同計算。更新預設排程只重算繼承來源；
+Cron、Queue 與預設批次的執行方式維持既有流程。
 
 同一個 connector 的不同同步 scope 共用 canonical connector lock，避免以下工作重疊：
 
