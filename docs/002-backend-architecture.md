@@ -979,6 +979,13 @@ Connector 不得直接寫入金融資料表。
 
 這樣可避免部分資料已更新、cursor 卻未更新，或 cursor 已更新但資料尚未完整寫入。
 
+快照、交易、帳單與投資交易的 `id` 由寫入當下的帳戶與來源識別組成，conflict columns
+則包含 `account_id`。Lifecycle reconciliation（例如 `card-reconciliation.ts` 把單卡
+摘要帳戶併回實體卡）可以改寫既有列的 `account_id` 並保留 `id`，以免影響交易偏好、
+分類與發票等引用。Promotion 前會把 staging 中同 `id` 既有列的 payload 改用其目前的
+`account_id`，讓來源再次送出舊帳戶的資料時更新同一列，不會撞上 `id` 主鍵。
+改寫其他組成 `id` 的欄位（例如 `source_id`）不在此範圍，需另行處理重送衝突。
+
 永豐信用卡取得 `LatestTx.Items` 與 `OutstandingDetail.Detail` 後，在 `bank_transactions`
 原表保存授權，以 `matched_transaction_id` 記錄已入帳關係，不另設授權表或停用欄位。
 配對僅限同卡、同消費日，不跨日；排除手續費、服務費、不同金額方向與卡片識別不足的資料。
@@ -1036,7 +1043,7 @@ Connector 不得直接寫入金融資料表。
 ## 匯率更新
 
 `features/exchange-rates` 的更新流程取得 USD、JPY、EUR，加上有效銀行／信用卡帳戶、
-各 connector／asset type 最新投資持倉與手動資產的其他幣別。帳戶讀取最新餘額，手動資產讀取最新估值；
+各 connector／asset type 最新投資持倉與手動資產的其他幣別。投資持倉先取來源的最新完整快照，已知券商／帳戶／市場／資產類型再跨來源選擇權威快照，同日直接券商優先；API、總覽、匯率清單與金融快照共用這個選擇。識別不完整的持倉保留來源範圍，不按名稱或代號猜測合併。`cost_basis` 與 `unrealized_pnl` 保存來源原幣數值，不加進淨資產；市值、現金與損益欄位可保留小數。`empty:*` 帳戶快照 marker 讓賣出後的零庫存仍可取代較舊的集保持倉。帳戶讀取最新餘額，手動資產讀取最新估值；
 清單與更新流程共用 `shared/exchange-rates.ts`，排除 TWD、NAN 等非有效貨幣代碼並去重，
 只略過實際金額為 0 的資產，不將外幣四捨五入後再判斷。
 `GET /api/exchange-rates/currencies` 回傳預設幣別與有非零金額的資產幣別，避免依賴前端資產列表的分頁。
